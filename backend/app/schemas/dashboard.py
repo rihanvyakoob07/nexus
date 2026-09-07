@@ -29,7 +29,7 @@ class LeadershipDashboard(BaseModel):
     demand_radar: List[DemandRadarItem]
     total_engineers: int
     total_jds: int
-    deployment_velocity: float  # deployments per month
+    deployment_velocity: float
     agent_cost_last_30d: float
 
 
@@ -42,6 +42,10 @@ class AdminDashboard(BaseModel):
 
 class EngineerDashboard(BaseModel):
     engineer_id: int
+    readiness_score: float
+    evidence_confidence: float
+    assessment_score: Optional[float] = None
+    critical_gaps: int = 0
     overall_capability_score: float
     matched_opportunities: List[Dict[str, Any]]
     active_gaps: int
