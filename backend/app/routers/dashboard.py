@@ -20,18 +20,15 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/leadership", response_model=LeadershipDashboard)
 async def leadership_dashboard(db: AsyncSession = Depends(get_db), _=Depends(require_role("leadership", "admin"))):
     coverage_rows = await get_capability_coverage(db)
-    total_eng = (await db.execute(select(func.count(Engineer.id)))).scalar()
-    total_jds = (await db.execute(select(func.count(JD.id)))).scalar()
+    total_eng = (await db.execute(select(func.count(Engineer.id)))).scalar() or 0
+    total_jds = (await db.execute(select(func.count(JD.id)))).scalar() or 0
 
-    # Deployment velocity: deployments in last 30 days / 30 * 30
     from datetime import datetime, timedelta, timezone
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    dep_count = (await db.execute(select(func.count(Deployment.id)).where(Deployment.start_date >= cutoff))).scalar()
-    velocity = round(dep_count / 30, 2)
+    dep_count = (await db.execute(select(func.count(Deployment.id)).where(Deployment.start_date >= cutoff))).scalar() or 0
+    velocity = round(dep_count, 2)
 
-    cost_res = await db.execute(
-        select(func.sum(AgentCall.cost_estimate)).where(AgentCall.timestamp >= cutoff)
-    )
+    cost_res = await db.execute(select(func.sum(AgentCall.cost_estimate)).where(AgentCall.timestamp >= cutoff))
     total_cost = cost_res.scalar() or 0.0
 
     coverage = [
@@ -54,11 +51,13 @@ async def leadership_dashboard(db: AsyncSession = Depends(get_db), _=Depends(req
     )
     gap_alerts = [GapAlert(skill_name=r.name, severity=r.severity, affected_jds=0, engineer_gap_count=r.cnt) for r in gap_res.all()]
 
-    # Demand radar: trending skills across JDs
+    # Current demand, not a forecast: published JD capability requirements.
     from app.models.jd import JDCapability
     demand_res = await db.execute(
         select(Skill.name, func.count(JDCapability.id).label("cnt"), func.avg(JDCapability.weight).label("avg_w"))
         .join(Skill, JDCapability.skill_id == Skill.id)
+        .join(JD, JDCapability.jd_id == JD.id)
+        .where(JD.is_published.is_(True))
         .group_by(Skill.id)
         .order_by(func.count(JDCapability.id).desc())
         .limit(15)
@@ -78,9 +77,9 @@ async def leadership_dashboard(db: AsyncSession = Depends(get_db), _=Depends(req
 
 @router.get("/admin", response_model=AdminDashboard)
 async def admin_dashboard(db: AsyncSession = Depends(get_db), _=Depends(require_role("admin", "leadership"))):
-    open_jds = (await db.execute(select(func.count(JD.id)))).scalar()
-    pending_assessments = (await db.execute(select(func.count(Assessment.id)).where(Assessment.status == "in_progress"))).scalar()
-    teams_composed = (await db.execute(select(func.count(Team.id)))).scalar()
+    open_jds = (await db.execute(select(func.count(JD.id)))).scalar() or 0
+    pending_assessments = (await db.execute(select(func.count(Assessment.id)).where(Assessment.status == "in_progress"))).scalar() or 0
+    teams_composed = (await db.execute(select(func.count(Team.id)))).scalar() or 0
 
     recent_matches_res = await db.execute(
         select(Match, Engineer, JD)
@@ -90,19 +89,32 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db), _=Depends(require_
         .limit(10)
     )
     recent = [{"engineer": eng.name, "jd": jd.client_name, "score": m.jd_match_score} for m, eng, jd in recent_matches_res.all()]
-
     return AdminDashboard(open_jds=open_jds, recent_matches=recent, pending_assessments=pending_assessments, teams_composed=teams_composed)
 
 
 @router.get("/engineer", response_model=EngineerDashboard)
 async def engineer_dashboard(db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
-    # Overall capability score: avg confidence across skills
     skills_res = await db.execute(
         select(func.avg(EngineerSkill.confidence_score)).where(EngineerSkill.engineer_id == current_user.id)
     )
-    avg_score = skills_res.scalar() or 0.0
+    evidence_confidence = round(float(skills_res.scalar() or 0.0), 2)
 
-    gaps_count = (await db.execute(select(func.count(SkillGap.id)).where(SkillGap.engineer_id == current_user.id))).scalar()
+    latest_assessment = (await db.execute(
+        select(Assessment)
+        .where(Assessment.engineer_id == current_user.id, Assessment.status == "completed")
+        .order_by(Assessment.completed_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    assessment_score = round(float(latest_assessment.readiness_score if latest_assessment and latest_assessment.readiness_score is not None else 0.0), 2) or None
+
+    # Readiness is a transparent composite, not an unexplained capability claim.
+    # If no assessment exists, do not invent one: readiness equals evidence confidence.
+    readiness_score = evidence_confidence if assessment_score is None else round(evidence_confidence * 0.7 + assessment_score * 0.3, 2)
+
+    gaps_count = (await db.execute(select(func.count(SkillGap.id)).where(SkillGap.engineer_id == current_user.id))).scalar() or 0
+    critical_gaps = (await db.execute(
+        select(func.count(SkillGap.id)).where(SkillGap.engineer_id == current_user.id, SkillGap.severity.in_(["critical", "high"]))
+    )).scalar() or 0
 
     matches_res = await db.execute(
         select(Match, JD)
@@ -113,13 +125,16 @@ async def engineer_dashboard(db: AsyncSession = Depends(get_db), current_user=De
     )
     opportunities = [{"jd_id": jd.id, "client": jd.client_name, "match_score": m.jd_match_score, "explanation": m.explanation} for m, jd in matches_res.all()]
 
-    from app.models.gap_learning import LearningPath
     lp_res = await db.execute(select(LearningPath).where(LearningPath.engineer_id == current_user.id).order_by(LearningPath.created_at.desc()).limit(1))
     lp = lp_res.scalar_one_or_none()
 
     return EngineerDashboard(
         engineer_id=current_user.id,
-        overall_capability_score=round(avg_score, 2),
+        readiness_score=readiness_score,
+        evidence_confidence=evidence_confidence,
+        assessment_score=assessment_score,
+        critical_gaps=critical_gaps,
+        overall_capability_score=evidence_confidence,
         matched_opportunities=opportunities,
         active_gaps=gaps_count,
         learning_path_status=lp.status if lp else None,
@@ -131,23 +146,11 @@ async def engineer_dashboard(db: AsyncSession = Depends(get_db), current_user=De
 async def observability(db: AsyncSession = Depends(get_db), _=Depends(require_role("leadership", "admin"))):
     res = await db.execute(select(AgentCall).order_by(AgentCall.timestamp.desc()).limit(200))
     rows = res.scalars().all()
-
     total_cost = sum(r.cost_estimate for r in rows)
     avg_latency = sum(r.latency_ms for r in rows) / max(len(rows), 1)
-
     return ObservabilityDashboard(
-        rows=[ObservabilityRow(
-            agent_name=r.agent_name,
-            model_used=r.model_used,
-            input_tokens=r.input_tokens,
-            output_tokens=r.output_tokens,
-            latency_ms=round(r.latency_ms, 1),
-            cost_estimate=round(r.cost_estimate, 6),
-            timestamp=r.timestamp.isoformat(),
-        ) for r in rows],
-        total_cost=round(total_cost, 4),
-        total_calls=len(rows),
-        avg_latency_ms=round(avg_latency, 1),
+        rows=[ObservabilityRow(agent_name=r.agent_name, model_used=r.model_used, input_tokens=r.input_tokens, output_tokens=r.output_tokens, latency_ms=round(r.latency_ms, 1), cost_estimate=round(r.cost_estimate, 6), timestamp=r.timestamp.isoformat()) for r in rows],
+        total_cost=round(total_cost, 4), total_calls=len(rows), avg_latency_ms=round(avg_latency, 1),
     )
 
 

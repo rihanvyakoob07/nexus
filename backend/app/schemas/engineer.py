@@ -59,7 +59,6 @@ class EngineerCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
-    role: str = "engineer"
     seniority: Optional[str] = None
     bio: Optional[str] = None
 

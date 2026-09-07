@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List
 from app.core.db import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_self_or_role
 from app.models.engineer import Engineer, EngineerSkill, Skill, Evidence
 from app.models.gap_learning import SkillGap, LearningPath
 from app.models.assessment import Assessment
@@ -13,7 +13,7 @@ from app.schemas.engineer import EngineerOut, EngineerPassport, EngineerSkillOut
 from app.schemas.team import GapOut, LearningPathCreate
 from app.schemas.assessment import AssessmentOut
 from app.services.confidence_scoring import compute_confidence
-from app.agents import gap_agent, learning_agent
+from app.agents import learning_agent
 
 router = APIRouter(prefix="/engineers", tags=["engineers"])
 
@@ -33,7 +33,7 @@ async def list_engineers(db: AsyncSession = Depends(get_db), _=Depends(get_curre
 
 
 @router.get("/{engineer_id}", response_model=EngineerPassport)
-async def get_engineer(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_engineer(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     res = await db.execute(select(Engineer).where(Engineer.id == engineer_id))
     eng = res.scalar_one_or_none()
     if not eng:
@@ -66,45 +66,30 @@ async def get_engineer(engineer_id: int, db: AsyncSession = Depends(get_db), _=D
             last_updated=es.last_updated,
         ))
 
-    return {
-        **eng.__dict__,
-        "skills": skills_out,
-        "evidence": evidence_list,
-        "certifications": certs,
-    }
+    return {**eng.__dict__, "skills": skills_out, "evidence": evidence_list, "certifications": certs}
 
 
 @router.get("/{engineer_id}/gaps", response_model=List[GapOut])
-async def get_gaps(engineer_id: int, jd_id: int = None, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_gaps(engineer_id: int, jd_id: int = None, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     query = select(SkillGap, Skill).join(Skill, SkillGap.skill_id == Skill.id).where(SkillGap.engineer_id == engineer_id)
     if jd_id:
         query = query.where(SkillGap.jd_id == jd_id)
     res = await db.execute(query)
-    return [
-        GapOut(skill_id=sk.id, skill_name=sk.name, severity=sg.severity,
-               current_score=sg.current_score, target_score=sg.target_score)
-        for sg, sk in res.all()
-    ]
+    return [GapOut(skill_id=sk.id, skill_name=sk.name, severity=sg.severity, current_score=sg.current_score, target_score=sg.target_score) for sg, sk in res.all()]
 
 
 @router.get("/{engineer_id}/assessments", response_model=List[AssessmentOut])
-async def get_assessments(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_assessments(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     res = await db.execute(
-        select(Assessment)
-        .options(selectinload(Assessment.turns))
-        .where(Assessment.engineer_id == engineer_id)
+        select(Assessment).options(selectinload(Assessment.turns)).where(Assessment.engineer_id == engineer_id)
     )
     return res.scalars().all()
 
 
 @router.get("/{engineer_id}/deployments")
-async def get_deployments(engineer_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
-    if current_user.role == "engineer" and current_user.id != engineer_id:
-        raise HTTPException(403, "Insufficient permissions")
+async def get_deployments(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     res = await db.execute(
-        select(Deployment)
-        .where(Deployment.engineer_id == engineer_id)
-        .order_by(Deployment.start_date.desc(), Deployment.id.desc())
+        select(Deployment).where(Deployment.engineer_id == engineer_id).order_by(Deployment.start_date.desc(), Deployment.id.desc())
     )
     return [
         {
@@ -121,9 +106,9 @@ async def get_deployments(engineer_id: int, db: AsyncSession = Depends(get_db), 
 
 
 @router.post("/{engineer_id}/learning-path")
-async def generate_learning_path(engineer_id: int, payload: LearningPathCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def generate_learning_path(engineer_id: int, payload: LearningPathCreate, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     from app.models.jd import JD
-    from app.services.capability_graph import get_jd_skill_requirements, get_all_engineers_skill_map
+    from app.services.capability_graph import get_all_engineers_skill_map
 
     res = await db.execute(select(Engineer).where(Engineer.id == engineer_id))
     eng = res.scalar_one_or_none()
@@ -133,13 +118,11 @@ async def generate_learning_path(engineer_id: int, payload: LearningPathCreate, 
     skill_map = await get_all_engineers_skill_map(db)
     profile = {"id": eng.id, "name": eng.name, "seniority": eng.seniority, "skills": skill_map.get(eng.id, [])}
 
-    # Build gap list
     gap_query = select(SkillGap, Skill).join(Skill).where(SkillGap.engineer_id == engineer_id)
     if payload.jd_id:
         gap_query = gap_query.where(SkillGap.jd_id == payload.jd_id)
     gap_res = await db.execute(gap_query)
-    gaps = [{"skill": sk.name, "current_score": sg.current_score, "target_score": sg.target_score, "severity": sg.severity}
-            for sg, sk in gap_res.all()]
+    gaps = [{"skill": sk.name, "current_score": sg.current_score, "target_score": sg.target_score, "severity": sg.severity} for sg, sk in gap_res.all()]
 
     if not gaps:
         raise HTTPException(400, "No gaps found to generate a learning path for")
@@ -162,12 +145,9 @@ async def generate_learning_path(engineer_id: int, payload: LearningPathCreate, 
 
 
 @router.get("/{engineer_id}/learning-path")
-async def get_learning_path(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_learning_path(engineer_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_self_or_role("admin", "leadership"))):
     result = await db.execute(
-        select(LearningPath)
-        .where(LearningPath.engineer_id == engineer_id)
-        .order_by(LearningPath.created_at.desc())
-        .limit(1)
+        select(LearningPath).where(LearningPath.engineer_id == engineer_id).order_by(LearningPath.created_at.desc()).limit(1)
     )
     learning_path = result.scalar_one_or_none()
     if not learning_path:
