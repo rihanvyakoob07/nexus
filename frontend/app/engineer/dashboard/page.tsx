@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CapabilityBar } from "@/components/CapabilityBar";
+import CapabilityBar from "@/components/CapabilityBar";
 import ReadinessGauge from "@/components/ReadinessGauge";
 import { apiFetch, getMyApplications, hasRole } from "@/lib/api";
 import type { Application, EngineerDashboard } from "@/types/api";
