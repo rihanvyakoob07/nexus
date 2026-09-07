@@ -1,0 +1,15 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import { getMyProfile, hasRole, updateMyProfile } from "@/lib/api";
+import type { EngineerPassport } from "@/types/api";
+
+export default function EngineerProfilePage() {
+  const [profile, setProfile] = useState<EngineerPassport | null>(null); const [name, setName] = useState(""); const [seniority, setSeniority] = useState(""); const [bio, setBio] = useState(""); const [message, setMessage] = useState<string | null>(null); const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!hasRole("engineer")) { setError("Engineer access is required."); return; } getMyProfile().then((data) => { setProfile(data); setName(data.name); setSeniority(data.seniority ?? ""); setBio(data.bio ?? ""); }).catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load profile.")); }, []);
+  async function submit(event: FormEvent) { event.preventDefault(); try { const updated = await updateMyProfile({ name, seniority, bio }); setProfile(profile ? { ...profile, ...updated } : null); setMessage("Profile updated."); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to update profile."); } }
+  if (error && !profile) return <main className="text-[#F0F4FF]"><p className="text-[#EF4444]">{error}</p><Link href="/login" className="mt-4 inline-block text-[#00B5E2]">Sign in</Link></main>;
+  if (!profile) return <main className="text-[#8899BB]">Loading profile...</main>;
+  return <div><header className="mb-8"><p className="hcl-label">Engineer portal</p><h1 className="mt-2 text-2xl font-semibold">My profile</h1><p className="mt-2 text-[#8899BB]">Keep the identity and narrative behind your capability graph current.</p></header><form onSubmit={submit} className="hcl-card max-w-3xl space-y-5 p-6"><label className="block"><span className="hcl-label">Name</span><input value={name} onChange={(event) => setName(event.target.value)} className="hcl-input mt-2 w-full" required /></label><label className="block"><span className="hcl-label">Email</span><input value={profile.email} disabled className="hcl-input mt-2 w-full opacity-60" /></label><label className="block"><span className="hcl-label">Seniority</span><select value={seniority} onChange={(event) => setSeniority(event.target.value)} className="hcl-input mt-2 w-full"><option value="">Not specified</option><option value="junior">Junior</option><option value="mid">Mid</option><option value="senior">Senior</option><option value="principal">Principal</option></select></label><label className="block"><span className="hcl-label">Bio</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} className="hcl-input mt-2 min-h-32 w-full" /></label>{message ? <p className="text-sm text-[#00D4AA]">{message}</p> : null}{error ? <p className="text-sm text-[#EF4444]">{error}</p> : null}<button className="hcl-button-primary">Save profile</button></form></div>;
+}

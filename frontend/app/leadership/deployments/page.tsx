@@ -1,0 +1,21 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import { apiFetch, hasRole } from "@/lib/api";
+import type { Deployment } from "@/types/api";
+
+export default function DeploymentsPage() {
+  const [deployments, setDeployments] = useState<Deployment[] | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState(8);
+  const [success, setSuccess] = useState(true);
+  const [issues, setIssues] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  async function load() { setDeployments(await apiFetch<Deployment[]>("/deployments/")); }
+  useEffect(() => { if (!hasRole("leadership", "admin")) { setError("Leadership or admin access is required."); return; } load().catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load deployments.")); }, []);
+  async function submit(event: FormEvent) { event.preventDefault(); if (!selected) return; try { await apiFetch(`/deployments/${selected}/outcome`, { method: "POST", body: JSON.stringify({ client_feedback_score: feedback, delivery_success: success, issues_reported: issues.split("\n").map((item) => item.trim()).filter(Boolean) }) }); setSelected(null); setIssues(""); await load(); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to record outcome."); } }
+  if (error) return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-50"><p className="text-rose-300">{error}</p><Link href="/login" className="mt-4 inline-block text-sky-300">Sign in</Link></main>;
+  if (!deployments) return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-400">Loading deployments...</main>;
+  return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-50"><div className="mx-auto max-w-6xl"><Link href="/leadership/dashboard" className="text-sm text-sky-300">← Leadership dashboard</Link><div className="mt-8 border-b border-slate-800 pb-6"><p className="text-xs uppercase tracking-[0.3em] text-sky-300">Ground truth loop</p><h1 className="mt-2 text-4xl font-bold text-white">Deployments and outcomes</h1><p className="mt-3 text-slate-400">Record client outcomes and send the result into recalibration.</p></div><section className="mt-8 space-y-3">{deployments.length ? deployments.map((deployment) => <article key={deployment.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><h2 className="font-semibold text-white">Deployment #{deployment.id}</h2><p className="mt-1 text-sm text-slate-400">Engineer #{deployment.engineer_id} · JD #{deployment.jd_id} · Started {deployment.start_date?.slice(0, 10) ?? "not started"}</p></div>{deployment.outcome ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300">Outcome recorded</span> : <button onClick={() => setSelected(deployment.id)} className="rounded-full bg-sky-500 px-4 py-2 text-sm text-slate-950">Record outcome</button>}</div>{selected === deployment.id ? <form onSubmit={submit} className="mt-5 grid gap-3 border-t border-slate-800 pt-5 md:grid-cols-3"><label className="text-sm text-slate-300">Feedback score<input value={feedback} onChange={(event) => setFeedback(Number(event.target.value))} type="number" min={0} max={10} step={0.1} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white" /></label><label className="flex items-center gap-2 text-sm text-slate-300"><input checked={success} onChange={(event) => setSuccess(event.target.checked)} type="checkbox" /> Delivery succeeded</label><label className="text-sm text-slate-300 md:col-span-3">Issues, one per line<textarea value={issues} onChange={(event) => setIssues(event.target.value)} className="mt-2 h-24 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white" /></label><button className="rounded-full bg-emerald-500 px-4 py-2 text-sm text-slate-950 md:col-span-3">Submit outcome</button></form> : null}</article>) : <div className="rounded-3xl border border-slate-800 p-6 text-slate-400">No deployments recorded.</div>}</section></div></main>;
+}

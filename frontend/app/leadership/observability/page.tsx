@@ -1,0 +1,15 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiFetch, hasRole } from "@/lib/api";
+import type { ObservabilityDashboard } from "@/types/api";
+
+export default function ObservabilityPage() {
+  const [data, setData] = useState<ObservabilityDashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!hasRole("leadership", "admin")) { setError("Leadership or admin access is required."); return; } apiFetch<ObservabilityDashboard>("/dashboard/observability").then(setData).catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load observability data.")); }, []);
+  if (error) return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-50"><p className="text-rose-300">{error}</p><Link href="/login" className="mt-4 inline-block text-sky-300">Sign in</Link></main>;
+  if (!data) return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-400">Loading observability data...</main>;
+  return <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-50"><div className="mx-auto max-w-7xl"><Link href="/leadership/dashboard" className="text-sm text-sky-300">← Leadership dashboard</Link><div className="mt-8 border-b border-slate-800 pb-6"><p className="text-xs uppercase tracking-[0.3em] text-sky-300">Leadership observability</p><h1 className="mt-2 text-4xl font-bold text-white">Agent operations</h1><p className="mt-3 text-slate-400">Actual model, token, latency, and cost records from agent_calls.</p></div><section className="mt-8 grid gap-4 md:grid-cols-3">{[["Total calls", data.total_calls], ["Total cost", `$${data.total_cost.toFixed(4)}`], ["Average latency", `${data.avg_latency_ms} ms`]].map(([label, value]) => <div key={String(label)} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-3xl font-semibold text-white">{value}</p></div>)}</section><div className="mt-6 overflow-x-auto rounded-3xl border border-slate-800 bg-slate-900/80"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-slate-800 text-xs uppercase tracking-[0.16em] text-slate-400"><tr><th className="p-4">Agent</th><th className="p-4">Model</th><th className="p-4">Input</th><th className="p-4">Output</th><th className="p-4">Latency</th><th className="p-4">Cost</th><th className="p-4">Timestamp</th></tr></thead><tbody>{data.rows.map((row, index) => <tr key={`${row.timestamp}-${index}`} className="border-b border-slate-800/70 text-slate-300"><td className="p-4 text-white">{row.agent_name}</td><td className="p-4">{row.model_used}</td><td className="p-4">{row.input_tokens}</td><td className="p-4">{row.output_tokens}</td><td className="p-4">{row.latency_ms} ms</td><td className="p-4">${row.cost_estimate.toFixed(6)}</td><td className="p-4">{row.timestamp.slice(0, 19)}</td></tr>)}</tbody></table>{!data.rows.length ? <p className="p-6 text-sm text-slate-400">No agent calls recorded yet.</p> : null}</div></div></main>;
+}

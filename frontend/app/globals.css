@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0A0F1C;
+  --foreground: #F0F4FF;
+  --hcl-blue: #00B5E2;
+  --hcl-blue-dark: #0077A8;
+  --hcl-purple: #7B2D8B;
+  --hcl-purple-light: #A855C8;
+  --hcl-surface: #111827;
+  --hcl-surface-raised: #1A2235;
+  --hcl-border: #1E2D45;
+  --hcl-muted: #8899BB;
+  --hcl-success: #00D4AA;
+  --hcl-warning: #F59E0B;
+  --hcl-error: #EF4444;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-geist-sans), sans-serif;
+  background-image: radial-gradient(circle at 90% 0%, rgba(0, 181, 226, 0.1), transparent 32%), radial-gradient(circle at 10% 100%, rgba(123, 45, 139, 0.08), transparent 30%);
+  background-attachment: fixed;
+}
+
+button, a { transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease; }
+
+.hcl-accent { color: var(--hcl-blue); }
+.hcl-accent-red { color: var(--hcl-error); }
+.hcl-rule { border-color: var(--hcl-border); }
+
+@layer components {
+  .hcl-card { @apply rounded-xl border border-[#1E2D45] bg-[#111827] shadow-lg; }
+  .hcl-card-raised { @apply rounded-xl border border-[#1E2D45] bg-[#1A2235] shadow-lg; }
+  .hcl-button-primary { @apply rounded-lg bg-[#00B5E2] px-4 py-2 font-semibold text-white transition-all hover:bg-[#0077A8] disabled:cursor-not-allowed disabled:opacity-60; }
+  .hcl-button-secondary { @apply rounded-lg border border-[#00B5E2] px-4 py-2 text-[#00B5E2] transition-all hover:bg-[#00B5E2]/10; }
+  .hcl-input { @apply rounded-lg border border-[#1E2D45] bg-[#0A0F1C] p-3 text-[#F0F4FF] placeholder:text-[#334155] focus:border-[#00B5E2] focus:outline-none focus:ring-1 focus:ring-[#00B5E2]; }
+  .hcl-label { @apply text-xs font-medium uppercase tracking-widest text-[#8899BB]; }
+  .hcl-table { @apply overflow-hidden rounded-xl border border-[#1E2D45] bg-[#111827]; }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
