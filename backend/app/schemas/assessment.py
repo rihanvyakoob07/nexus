@@ -45,8 +45,10 @@ class AssessmentResult(BaseModel):
     status: str
     scores: List[AssessmentScoreOut]
     overall_score: float
-    readiness_level: str  # not_ready | developing | ready | highly_ready
+    readiness_level: str
     summary: str
+    confidence: float = 0.0
+    evidence_count: int = 0
 
 
 class NextQuestion(BaseModel):
