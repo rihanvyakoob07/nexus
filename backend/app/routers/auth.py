@@ -12,6 +12,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=EngineerOut, status_code=201)
 async def register(payload: EngineerCreate, db: AsyncSession = Depends(get_db)):
+    """Public registration always creates an engineer account.
+
+    Privileged roles must be provisioned through an administrative workflow;
+    accepting role from an unauthenticated request would allow privilege escalation.
+    """
     res = await db.execute(select(Engineer).where(Engineer.email == payload.email))
     if res.scalar_one_or_none():
         raise HTTPException(400, "Email already registered")
@@ -19,7 +24,7 @@ async def register(payload: EngineerCreate, db: AsyncSession = Depends(get_db)):
         name=payload.name,
         email=payload.email,
         hashed_password=hash_password(payload.password),
-        role=payload.role,
+        role="engineer",
         seniority=payload.seniority,
         bio=payload.bio,
     )
