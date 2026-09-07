@@ -12,7 +12,7 @@ export type GapAlert = { skill_name: string; severity: string; affected_jds: num
 export type DemandRadarItem = { skill_name: string; demand_count: number; avg_priority_weight: number };
 export type LeadershipDashboard = { capability_coverage: CapabilityCoverage[]; gap_alerts: GapAlert[]; demand_radar: DemandRadarItem[]; total_engineers: number; total_jds: number; deployment_velocity: number; agent_cost_last_30d: number };
 export type AdminDashboard = { open_jds: number; recent_matches: Array<{ engineer: string; jd: string; score: number }>; pending_assessments: number; teams_composed: number };
-export type EngineerDashboard = { engineer_id: number; overall_capability_score: number; matched_opportunities: Array<{ jd_id: number; client: string; match_score: number; explanation?: string | null }>; active_gaps: number; learning_path_status?: string | null; projected_readiness_date?: string | null };
+export type EngineerDashboard = { engineer_id: number; readiness_score: number; evidence_confidence: number; assessment_score?: number | null; critical_gaps: number; overall_capability_score: number; matched_opportunities: Array<{ jd_id: number; client: string; match_score: number; explanation?: string | null }>; active_gaps: number; learning_path_status?: string | null; projected_readiness_date?: string | null };
 export type ObservabilityRow = { agent_name: string; model_used: string; input_tokens: number; output_tokens: number; latency_ms: number; cost_estimate: number; timestamp: string };
 export type ObservabilityDashboard = { rows: ObservabilityRow[]; total_cost: number; total_calls: number; avg_latency_ms: number };
 
